@@ -17,7 +17,8 @@ export const app = express();
 
 app.use(
   cors({
-    origin: env.CLIENT_ORIGIN,
+    // Reflect the caller's Origin header so credentialed requests work from any origin.
+    origin: true,
     credentials: true
   })
 );
