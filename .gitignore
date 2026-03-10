@@ -1,0 +1,32 @@
+# ── Node / Server ──────────────────────────────────────────
+server/node_modules/
+server/dist/
+server/.env
+server/cookies.txt
+
+# ── Flutter / App ───────────────────────────────────────────
+app/.dart_tool/
+app/.packages
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/.pub-cache/
+app/.pub/
+app/coverage/
+
+# IntelliJ / Android Studio
+app/.idea/
+app/*.iml
+*.iml
+*.ipr
+*.iws
+
+# ── OS & Editor ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.vscode/
+
+# ── Secrets (root level, just in case) ──────────────────────
+.env
