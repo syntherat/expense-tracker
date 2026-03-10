@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "npm install --include=dev && tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts"
   },
