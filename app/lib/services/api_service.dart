@@ -22,7 +22,7 @@ class ApiService {
 
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:4000/api',
+    defaultValue: 'https://expense-tracker-7aie.onrender.com/api',
   );
   static const String _inviteShareBaseUrl = String.fromEnvironment(
     'INVITE_SHARE_BASE_URL',
