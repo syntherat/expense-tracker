@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/models.dart';
+import 'dio_session_setup_stub.dart'
+  if (dart.library.io) 'dio_session_setup_io.dart';
 
 class ApiService {
   ApiService()
@@ -18,7 +20,9 @@ class ApiService {
               'withCredentials': true,
             },
           ),
-        );
+        ) {
+    configureSessionTransport(_dio);
+  }
 
   static const String _apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
