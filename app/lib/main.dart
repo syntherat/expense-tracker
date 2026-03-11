@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 import 'models/models.dart';
 import 'screens/group_detail_screen.dart';
@@ -15,6 +16,12 @@ import 'widgets/app_chrome.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb) {
+    OneSignal.initialize('30b2c15a-8684-4021-a121-171548e19e29');
+    OneSignal.Notifications.requestPermission(true);
+  }
+
   runApp(const ExpenseApp());
 }
 
@@ -106,6 +113,9 @@ class _ExpenseAppState extends State<ExpenseApp> {
   Future<void> _restoreSession() async {
     final me = await _apiService.me();
     if (!mounted) return;
+    if (me != null && !kIsWeb) {
+      OneSignal.login(me.id);
+    }
     setState(() {
       _user = me;
       _booting = false;
@@ -362,6 +372,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
             return LoginScreen(
               apiService: _apiService,
               onLogin: (user) {
+                if (!kIsWeb) OneSignal.login(user.id);
                 setState(() => _user = user);
                 _tryShowInvitePrompt();
               },
@@ -372,6 +383,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
             apiService: _apiService,
             user: _user!,
             onLogout: () async {
+              if (!kIsWeb) OneSignal.logout();
               if (!mounted) return;
               setState(() => _user = null);
             },

@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { ensureGroupMembership } from "../services/membership.js";
 import { getGroupBalances } from "../services/balances.js";
 import { getSignedDownloadUrl } from "../services/s3.js";
+import { sendPushNotifications } from "../services/onesignal.js";
 
 export const expensesRouter = Router();
 expensesRouter.use(requireAuth);
@@ -156,6 +157,9 @@ async function insertNotifications({
       ]
     );
   }
+
+  // Fire push notifications (non-blocking, never crashes request on failure).
+  void sendPushNotifications({ userIds, title, body, data });
 }
 
 expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Response) => {

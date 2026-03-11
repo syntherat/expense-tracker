@@ -16,7 +16,9 @@ const envSchema = z.object({
   AWS_S3_BUCKET: z.string().optional().default(""),
   AWS_ACCESS_KEY_ID: z.string().optional().default(""),
   AWS_SECRET_ACCESS_KEY: z.string().optional().default(""),
-  AWS_S3_PUBLIC_BASE_URL: z.string().optional().default("")
+  AWS_S3_PUBLIC_BASE_URL: z.string().optional().default(""),
+  ONESIGNAL_APP_ID: z.string().optional().default(""),
+  ONESIGNAL_API_KEY: z.string().optional().default("")
 });
 
 export const env = envSchema.parse(process.env);

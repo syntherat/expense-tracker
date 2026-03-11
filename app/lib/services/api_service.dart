@@ -5,7 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/models.dart';
 import 'dio_session_setup_stub.dart'
-  if (dart.library.io) 'dio_session_setup_io.dart';
+    if (dart.library.io) 'dio_session_setup_io.dart';
 
 class ApiService {
   ApiService()
