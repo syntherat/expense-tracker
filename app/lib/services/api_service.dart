@@ -115,6 +115,10 @@ class ApiService {
     }
   }
 
+  Future<void> logout() async {
+    await _dio.post('/auth/logout');
+  }
+
   Future<List<Group>> listGroups() async {
     final res = await _dio.get('/groups');
     final rows = (res.data['groups'] as List<dynamic>);

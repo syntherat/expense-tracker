@@ -11,11 +11,13 @@ class GroupListScreen extends StatefulWidget {
     required this.apiService,
     required this.user,
     required this.onOpenGroup,
+    required this.onLogout,
   });
 
   final ApiService apiService;
   final AppUser user;
   final ValueChanged<Group> onOpenGroup;
+  final Future<void> Function() onLogout;
 
   @override
   State<GroupListScreen> createState() => _GroupListScreenState();
@@ -231,6 +233,36 @@ class _GroupListScreenState extends State<GroupListScreen> {
     }
   }
 
+  Future<void> _confirmAndLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('You will need to sign in again to continue.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
+    try {
+      await widget.apiService.logout();
+    } catch (_) {
+      // Even if the network call fails, clear local auth state so user can sign in again.
+    }
+
+    await widget.onLogout();
+  }
+
   @override
   Widget build(BuildContext context) {
     final greetingName = widget.user.fullName.split(' ').first;
@@ -238,6 +270,14 @@ class _GroupListScreenState extends State<GroupListScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: IconButton.filledTonal(
+            onPressed: _confirmAndLogout,
+            tooltip: 'Log out',
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.only(right: 12),
           child: IconButton.filledTonal(

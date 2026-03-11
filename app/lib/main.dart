@@ -371,6 +371,10 @@ class _ExpenseAppState extends State<ExpenseApp> {
           return GroupListScreen(
             apiService: _apiService,
             user: _user!,
+            onLogout: () async {
+              if (!mounted) return;
+              setState(() => _user = null);
+            },
             onOpenGroup: (group) {
               Navigator.of(navContext).push(
                 MaterialPageRoute(

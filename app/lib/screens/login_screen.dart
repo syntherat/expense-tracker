@@ -79,19 +79,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: const Color(0xFF9BB0BC),
                     ),
               ),
-              const SizedBox(height: 28),
-              const AppPanel(
-                child: Row(
-                  children: [
-                    _FeaturePill(
-                        icon: Icons.group_rounded, label: 'Invite groups'),
-                    SizedBox(width: 12),
-                    _FeaturePill(
-                        icon: Icons.receipt_long_rounded,
-                        label: 'Fast entries'),
-                  ],
-                ),
-              ),
               const SizedBox(height: 24),
               AppPanel(
                 child: Column(
@@ -167,42 +154,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FeaturePill extends StatelessWidget {
-  const _FeaturePill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111B23),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFF25333E)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: const Color(0xFF26D3B4), size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
         ),
       ),
     );
