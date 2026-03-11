@@ -74,7 +74,13 @@ authRouter.post("/login", (req: Request, res: Response, next: NextFunction) => {
         return next(loginErr);
       }
 
-      return res.json({ user });
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          return next(saveErr);
+        }
+
+        return res.json({ user });
+      });
     });
   })(req, res, next);
 });

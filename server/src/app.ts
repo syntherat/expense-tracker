@@ -15,6 +15,9 @@ const PgSession = connectPgSimple(session);
 
 export const app = express();
 
+// Needed on platforms like Render/Heroku where TLS terminates at a proxy.
+app.set("trust proxy", 1);
+
 app.use(
   cors({
     // Reflect the caller's Origin header so credentialed requests work from any origin.
@@ -37,9 +40,10 @@ app.use(
     resave: false,
     saveUninitialized: false,
     rolling: true,
+    proxy: env.NODE_ENV === "production",
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000,
-      sameSite: "lax",
+      sameSite: env.NODE_ENV === "production" ? "none" : "lax",
       secure: env.NODE_ENV === "production",
       httpOnly: true
     }
