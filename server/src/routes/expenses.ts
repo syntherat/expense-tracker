@@ -195,6 +195,9 @@ expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Respo
     [groupId]
   );
   const memberSet = new Set(members.rows.map((row) => row.user_id));
+  const notificationUserIds = members.rows
+    .map((row) => row.user_id as string)
+    .filter((targetUserId) => targetUserId !== userId);
 
   for (const targetUserId of uniqueUserIds) {
     if (!memberSet.has(targetUserId)) {
@@ -262,30 +265,28 @@ expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Respo
 
     await upsertExpensePaymentStatus(expense.id, client);
 
-    for (const row of members.rows) {
-      await client.query(
-        `
-          INSERT INTO notifications (user_id, group_id, expense_id, type, title, body, data)
-          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb);
-        `,
-        [
-          row.user_id,
+    await client.query("COMMIT");
+
+    if (notificationUserIds.length) {
+      try {
+        await insertNotifications({
+          userIds: notificationUserIds,
           groupId,
-          expense.id,
-          "expense_created",
-          "New expense added",
-          `${payload.description} was added in this group.`,
-          JSON.stringify({
+          expenseId: expense.id,
+          type: "expense_created",
+          title: "New expense added",
+          body: `${payload.description} was added in this group.`,
+          data: {
             expenseId: expense.id,
             description: payload.description,
             amountCents: payload.amountCents,
             createdBy: userId
-          })
-        ]
-      );
+          }
+        });
+      } catch (notificationError) {
+        console.error("Failed to dispatch expense-created notifications", notificationError);
+      }
     }
-
-    await client.query("COMMIT");
 
     return res.status(201).json({ expense });
   } catch (error) {
@@ -540,6 +541,39 @@ expensesRouter.post("/expenses/:expenseId/reminders", async (req: Request, res: 
   );
 
   return res.json({ notifiedCount: targetIds.length });
+});
+
+expensesRouter.delete("/expenses/:expenseId", async (req: Request, res: Response) => {
+  const { expenseId } = req.params;
+  const userId = req.user!.id;
+
+  const expenseResult = await pool.query(
+    `
+      SELECT id, group_id, created_by
+      FROM expenses
+      WHERE id = $1
+      LIMIT 1;
+    `,
+    [expenseId]
+  );
+
+  if (!expenseResult.rowCount) {
+    return res.status(404).json({ message: "Expense not found" });
+  }
+
+  const expense = expenseResult.rows[0];
+  const isMember = await ensureGroupMembership(expense.group_id, userId);
+  if (!isMember) {
+    return res.status(403).json({ message: "Not a group member" });
+  }
+
+  if (expense.created_by !== userId) {
+    return res.status(403).json({ message: "Only expense creator can delete this expense" });
+  }
+
+  await pool.query("DELETE FROM expenses WHERE id = $1", [expenseId]);
+
+  return res.status(204).send();
 });
 
 expensesRouter.post("/expenses/:expenseId/payments/:targetUserId", async (req: Request, res: Response) => {

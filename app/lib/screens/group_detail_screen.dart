@@ -365,7 +365,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             expense: e,
                             formatter: formatter,
                             onTap: () async {
-                              await Navigator.push(
+                              final messenger = ScaffoldMessenger.of(context);
+                              final wasDeleted = await Navigator.push<bool>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => _ExpenseDetailPage(
@@ -376,7 +377,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                   ),
                                 ),
                               );
-                              if (mounted) await _load();
+                              if (!mounted) return;
+                              await _load();
+                              if (wasDeleted == true) {
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Expense deleted.'),
+                                  ),
+                                );
+                              }
                             },
                           ),
                         ),
@@ -652,6 +661,9 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
   bool _loading = true;
   bool _busy = false;
 
+  bool get _isCreator =>
+      _detail?.expense.createdById == widget.user.id;
+
   @override
   void initState() {
     super.initState();
@@ -718,6 +730,57 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
     }
   }
 
+  Future<void> _deleteExpense() async {
+    final detail = _detail;
+    if (detail == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete expense?'),
+        content: Text(
+          'This will permanently delete "${detail.expense.description}" and all its payment records.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6E74),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await widget.apiService.deleteExpense(detail.expense.id);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ApiService.readErrorMessage(
+              e,
+              fallback: 'Could not delete expense.',
+            ),
+          ),
+        ),
+      );
+      setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final formatter = NumberFormat.currency(symbol: '${widget.currency} ');
@@ -727,6 +790,29 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Expense details'),
+          actions: [
+            if (_isCreator)
+              PopupMenuButton<String>(
+                enabled: !_busy,
+                onSelected: (value) {
+                  if (value == 'delete') {
+                    _deleteExpense();
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline_rounded),
+                        SizedBox(width: 10),
+                        Text('Delete expense'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Details'),
@@ -973,6 +1059,7 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
                     onPressed: _busy
                         ? null
                         : () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             setState(() => _busy = true);
                             try {
                               await widget.apiService.markExpensePayment(
@@ -983,7 +1070,7 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
                               await _load();
                             } catch (e) {
                               if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(
                                     ApiService.readErrorMessage(
@@ -1018,6 +1105,7 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
           onPressed: _busy
               ? null
               : () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   setState(() => _busy = true);
                   try {
                     final count = await widget.apiService.sendExpenseReminder(
@@ -1025,14 +1113,14 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
                       userIds: pending.map((item) => item.userId).toList(),
                     );
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       SnackBar(
                           content: Text('Reminder sent to $count user(s).')),
                     );
                     await _load();
                   } catch (e) {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       SnackBar(
                         content: Text(
                           ApiService.readErrorMessage(
@@ -1143,7 +1231,7 @@ class _TransactionsPageState extends State<_TransactionsPage> {
   }
 
   Future<void> _openExpense(ExpenseItem expense) async {
-    await Navigator.push(
+    final wasDeleted = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => _ExpenseDetailPage(
@@ -1155,6 +1243,11 @@ class _TransactionsPageState extends State<_TransactionsPage> {
       ),
     );
     await _refresh();
+    if (wasDeleted == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Expense deleted.')),
+      );
+    }
   }
 
   @override

@@ -223,6 +223,10 @@ class ApiService {
     });
   }
 
+  Future<void> deleteExpense(String expenseId) async {
+    await _dio.delete('/expenses/$expenseId');
+  }
+
   Future<String> refreshInvite(String groupId) async {
     final res = await _dio.post('/groups/$groupId/invites');
     final invite = res.data['invite'] as Map<String, dynamic>;
