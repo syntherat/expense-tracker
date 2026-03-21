@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ import 'screens/group_detail_screen.dart';
 import 'screens/group_list_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/api_service.dart';
+import 'services/auth_session_store.dart';
 import 'widgets/app_chrome.dart';
 
 void main() {
@@ -32,10 +34,11 @@ class ExpenseApp extends StatefulWidget {
   State<ExpenseApp> createState() => _ExpenseAppState();
 }
 
-class _ExpenseAppState extends State<ExpenseApp> {
+class _ExpenseAppState extends State<ExpenseApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final _apiService = ApiService();
+  final _authSessionStore = AuthSessionStore();
   AppLinks? _appLinks;
 
   StreamSubscription<Uri>? _linkSub;
@@ -48,6 +51,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initNotificationHandlers();
     _initDeepLinks();
     _restoreSession();
@@ -71,9 +75,53 @@ class _ExpenseAppState extends State<ExpenseApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _linkSub?.cancel();
     _apiService.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshSessionOnAppResume());
+    }
+  }
+
+  Future<void> _refreshSessionOnAppResume() async {
+    if (_booting || !mounted) {
+      return;
+    }
+
+    try {
+      final me = await _apiService.me();
+      if (!mounted) return;
+
+      if (me != null) {
+        await _authSessionStore.saveUser(me);
+        if (_user?.id != me.id ||
+            _user?.fullName != me.fullName ||
+            _user?.phone != me.phone) {
+          setState(() => _user = me);
+        }
+      } else {
+        await _authSessionStore.clear();
+        if (_user != null && mounted) {
+          setState(() => _user = null);
+        }
+      }
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if ((status == 401 || status == 403) && mounted) {
+        await _authSessionStore.clear();
+        if (_user != null) {
+          setState(() => _user = null);
+        }
+      }
+      // Keep current user state on transient failures.
+    } catch (_) {
+      // Ignore resume-time transient failures.
+    }
   }
 
   Future<void> _initDeepLinks() async {
@@ -130,12 +178,27 @@ class _ExpenseAppState extends State<ExpenseApp> {
   }
 
   Future<void> _restoreSession() async {
-    AppUser? me;
+    final cachedUser = await _authSessionStore.readUser();
+    AppUser? me = cachedUser;
 
     try {
-      me = await _apiService.me();
+      final remoteUser = await _apiService.me();
+      if (remoteUser != null) {
+        me = remoteUser;
+        await _authSessionStore.saveUser(remoteUser);
+      } else {
+        me = null;
+        await _authSessionStore.clear();
+      }
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        me = null;
+        await _authSessionStore.clear();
+      }
+      // Network/server errors keep cached user, matching resilient restore behavior.
     } catch (_) {
-      me = null;
+      // Keep cached user for transient failures.
     }
 
     if (!mounted) return;
@@ -456,6 +519,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
               apiService: _apiService,
               onLogin: (user) {
                 if (!kIsWeb) OneSignal.login(user.id);
+                unawaited(_authSessionStore.saveUser(user));
                 setState(() => _user = user);
                 _tryShowInvitePrompt();
                 _tryHandlePendingNotificationNavigation();
@@ -468,6 +532,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
             user: _user!,
             onLogout: () async {
               if (!kIsWeb) OneSignal.logout();
+              await _authSessionStore.clear();
               if (!mounted) return;
               setState(() => _user = null);
             },
