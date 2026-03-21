@@ -18,7 +18,8 @@ Future<void> configureSessionTransport(Dio dio) async {
     }
 
     final cookieJar = PersistCookieJar(
-      ignoreExpires: false,
+      // Keep cookies across restarts; server-side session validation still controls access.
+      ignoreExpires: true,
       storage: FileStorage(cookieDir.path),
     );
 
