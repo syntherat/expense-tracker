@@ -26,56 +26,14 @@ permissions:
   contents: write
 
 jobs:
-  auto-tag:
-    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout (full history for tags)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Resolve tag from pubspec version
-        id: resolve_tag
-        shell: bash
-        run: |
-          APP_VERSION_LINE=$(grep -E '^version:' app/pubspec.yaml | head -n 1 || true)
-          if [[ -z "${APP_VERSION_LINE}" ]]; then
-            echo "Could not find version in app/pubspec.yaml"
-            exit 1
-          fi
-
-          APP_VERSION=$(echo "${APP_VERSION_LINE}" | sed -E 's/^version:[[:space:]]*([^+[:space:]]+).*/\1/')
-          TAG_NAME="v${APP_VERSION}"
-
-          echo "Resolved TAG_NAME=${TAG_NAME}"
-          echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_ENV"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Create and push tag if missing
-        shell: bash
-        run: |
-          TAG_NAME="${{ steps.resolve_tag.outputs.tag_name }}"
-
-          if git ls-remote --tags origin "refs/tags/${TAG_NAME}" | grep -q "${TAG_NAME}$"; then
-            echo "Tag ${TAG_NAME} already exists. Skipping tag creation."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git tag -a "${TAG_NAME}" -m "Release ${TAG_NAME}"
-          git push origin "${TAG_NAME}"
-
   build-and-release:
-    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -96,8 +54,18 @@ jobs:
             TAG_NAME="${{ inputs.tag }}"
             VERSION_NAME_INPUT="${{ inputs.version_name }}"
             VERSION_CODE_INPUT="${{ inputs.version_code }}"
-          else
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG_NAME="${GITHUB_REF_NAME}"
+            VERSION_NAME_INPUT=""
+            VERSION_CODE_INPUT=""
+          else
+            APP_VERSION_LINE=$(grep -E '^version:' app/pubspec.yaml | head -n 1 || true)
+            if [[ -z "${APP_VERSION_LINE}" ]]; then
+              echo "Could not find version in app/pubspec.yaml"
+              exit 1
+            fi
+            APP_VERSION=$(echo "${APP_VERSION_LINE}" | sed -E 's/^version:[[:space:]]*([^+[:space:]]+).*/\1/')
+            TAG_NAME="v${APP_VERSION}"
             VERSION_NAME_INPUT=""
             VERSION_CODE_INPUT=""
           fi
@@ -118,6 +86,23 @@ jobs:
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
           echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release tag exists
+        if: github.ref_type != 'tag'
+        shell: bash
+        run: |
+          TAG_NAME="${{ steps.release_meta.outputs.tag_name }}"
+
+          if git ls-remote --tags origin "refs/tags/${TAG_NAME}" | grep -q "${TAG_NAME}$"; then
+            echo "Tag ${TAG_NAME} already exists."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${TAG_NAME}" -m "Release ${TAG_NAME}"
+          git push origin "${TAG_NAME}"
 
       - name: Flutter pub get
         working-directory: app
