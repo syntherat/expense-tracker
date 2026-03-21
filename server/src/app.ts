@@ -17,11 +17,6 @@ const PgSession = connectPgSimple(session);
 export const app = express();
 const isProduction = env.NODE_ENV === "production";
 
-const allowedOrigins = env.CLIENT_ORIGIN
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
 const resolvedSameSite: "lax" | "strict" | "none" =
   isProduction && env.SESSION_COOKIE_SAME_SITE === "lax"
     ? "none"
@@ -32,17 +27,8 @@ app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Not allowed by CORS"));
-    },
+    // Reflect request origin so credentialed requests can work from any origin.
+    origin: true,
     credentials: true
   })
 );
