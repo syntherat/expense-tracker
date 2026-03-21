@@ -5,28 +5,27 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-void configureSessionTransport(Dio dio) {
-  // Keep cookies attached across requests and app restarts on Android/iOS.
-  // Initialize async to ensure directory is ready
-  _initPersistentCookies(dio);
-}
+Future<void> configureSessionTransport(Dio dio) async {
+  // Always install an in-memory cookie manager immediately so requests never race startup.
+  dio.interceptors.removeWhere((i) => i is CookieManager);
+  dio.interceptors.add(CookieManager(CookieJar()));
 
-void _initPersistentCookies(Dio dio) {
-  // Non-blocking initialization of persistent cookie storage
-  getApplicationDocumentsDirectory().then((appDocDir) {
-    try {
-      final cookieDir = Directory('${appDocDir.path}/.cookies/');
-      final cookieJar = PersistCookieJar(
-          ignoreExpires: false, storage: FileStorage(cookieDir.path));
-      // Clear existing in-memory cookie manager if it exists
-      dio.interceptors.removeWhere((i) => i is CookieManager);
-      dio.interceptors.add(CookieManager(cookieJar));
-    } catch (e) {
-      // Fallback to in-memory if file storage fails
-      debugPrint(
-          'Cookie persistence setup failed: $e, using in-memory storage');
+  try {
+    final appDocDir = await getApplicationDocumentsDirectory();
+    final cookieDir = Directory('${appDocDir.path}/.cookies/');
+    if (!cookieDir.existsSync()) {
+      cookieDir.createSync(recursive: true);
     }
-  }).catchError((e) {
-    debugPrint('Could not get application directory: $e');
-  });
+
+    final cookieJar = PersistCookieJar(
+      ignoreExpires: false,
+      storage: FileStorage(cookieDir.path),
+    );
+
+    // Swap to persistent cookie storage for app restarts.
+    dio.interceptors.removeWhere((i) => i is CookieManager);
+    dio.interceptors.add(CookieManager(cookieJar));
+  } catch (e) {
+    debugPrint('Cookie persistence setup failed: $e, keeping in-memory storage');
+  }
 }

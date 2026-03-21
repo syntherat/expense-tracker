@@ -15,11 +15,13 @@ class GroupDetailScreen extends StatefulWidget {
     required this.apiService,
     required this.group,
     required this.user,
+    this.initialExpenseId,
   });
 
   final ApiService apiService;
   final Group group;
   final AppUser user;
+  final String? initialExpenseId;
 
   @override
   State<GroupDetailScreen> createState() => _GroupDetailScreenState();
@@ -30,6 +32,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   List<GroupBalance> _balances = [];
   List<ExpenseItem> _expenses = [];
   bool _loading = true;
+  bool _openedInitialExpense = false;
 
   @override
   void initState() {
@@ -51,6 +54,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         _expenses = expenses;
         _loading = false;
       });
+
+      await _openInitialExpenseIfNeeded();
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -62,6 +67,57 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               fallback: 'Could not load group details.',
             ),
           ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openInitialExpenseIfNeeded() async {
+    if (_openedInitialExpense) {
+      return;
+    }
+
+    final expenseId = widget.initialExpenseId;
+    if (expenseId == null || expenseId.isEmpty) {
+      return;
+    }
+
+    ExpenseItem? targetExpense;
+    for (final expense in _expenses) {
+      if (expense.id == expenseId) {
+        targetExpense = expense;
+        break;
+      }
+    }
+
+    if (targetExpense == null || !mounted) {
+      return;
+    }
+
+    _openedInitialExpense = true;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final wasDeleted = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _ExpenseDetailPage(
+          apiService: widget.apiService,
+          expenseId: targetExpense!.id,
+          user: widget.user,
+          currency: widget.group.currency,
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await _load();
+    if (wasDeleted == true) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Expense deleted.'),
         ),
       );
     }
@@ -1052,7 +1108,7 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
                     ),
                   ),
                 ),
-                if (isCreator) ...[
+                if (isCreator || p.userId == widget.user.id) ...[
                   const SizedBox(width: 8),
                   IconButton(
                     onPressed: _busy

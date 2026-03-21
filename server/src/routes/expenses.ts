@@ -204,9 +204,6 @@ expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Respo
     [groupId]
   );
   const memberSet = new Set(members.rows.map((row) => row.user_id));
-  const notificationUserIds = members.rows
-    .map((row) => row.user_id as string)
-    .filter((targetUserId) => targetUserId !== userId);
 
   for (const targetUserId of uniqueUserIds) {
     if (!memberSet.has(targetUserId)) {
@@ -274,6 +271,22 @@ expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Respo
 
     await upsertExpensePaymentStatus(expense.id, client);
 
+    // Notify only users who actually have dues in this expense.
+    const pendingResult = await client.query(
+      `
+        SELECT user_id
+        FROM expense_payment_status
+        WHERE expense_id = $1
+          AND is_paid = FALSE
+          AND amount_cents > 0;
+      `,
+      [expense.id]
+    );
+
+    const notificationUserIds = pendingResult.rows
+      .map((row) => row.user_id as string)
+      .filter((targetUserId) => targetUserId !== userId);
+
     await client.query("COMMIT");
 
     if (notificationUserIds.length) {
@@ -286,10 +299,12 @@ expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Respo
           title: "New expense added",
           body: `${payload.description} was added in this group.`,
           data: {
+            groupId,
             expenseId: expense.id,
             description: payload.description,
             amountCents: payload.amountCents,
-            createdBy: userId
+            createdBy: userId,
+            route: "expense_detail"
           },
           soundName: "expense_tracker"
         });
@@ -538,7 +553,11 @@ expensesRouter.post("/expenses/:expenseId/reminders", async (req: Request, res: 
     type: "payment_reminder",
     title: "Payment reminder",
     body: `Reminder: payment is pending for ${expense.description}.`,
-    data: { expenseId },
+    data: {
+      groupId: expense.group_id,
+      expenseId,
+      route: "expense_detail"
+    },
     soundName: "expense_tracker"
   });
 
@@ -597,7 +616,13 @@ expensesRouter.post("/expenses/:expenseId/payments/:targetUserId", async (req: R
   const userId = req.user!.id;
 
   const expenseResult = await pool.query(
-    "SELECT id, group_id, created_by FROM expenses WHERE id = $1 LIMIT 1",
+    `
+      SELECT e.id, e.group_id, e.created_by, e.description, creator.full_name AS creator_name
+      FROM expenses e
+      JOIN users creator ON creator.id = e.created_by
+      WHERE e.id = $1
+      LIMIT 1
+    `,
     [expenseId]
   );
 
@@ -632,6 +657,58 @@ expensesRouter.post("/expenses/:expenseId/payments/:targetUserId", async (req: R
 
   if (!updated.rowCount) {
     return res.status(404).json({ message: "No pending payment found for this user" });
+  }
+
+  if (parsed.data.isPaid) {
+    const namesResult = await pool.query(
+      "SELECT id, full_name FROM users WHERE id = ANY($1::uuid[])",
+      [[userId, targetUserId]]
+    );
+
+    const namesById = new Map<string, string>();
+    for (const row of namesResult.rows) {
+      namesById.set(row.id as string, row.full_name as string);
+    }
+
+    const actorName = namesById.get(userId) ?? "A member";
+    const targetName = namesById.get(targetUserId) ?? "A member";
+
+    // Creator marks someone else's due as settled -> notify that member.
+    if (userId === expense.created_by && targetUserId !== userId) {
+      await insertNotifications({
+        userIds: [targetUserId],
+        groupId: expense.group_id,
+        expenseId,
+        type: "payment_settled_by_creator",
+        title: "Expense settled",
+        body: `Your expense for ${expense.description} has been settled by the creator.`,
+        data: {
+          groupId: expense.group_id,
+          expenseId,
+          route: "expense_detail"
+        },
+        soundName: "expense_tracker"
+      });
+    }
+
+    // Member marks own due as settled -> notify creator.
+    if (userId === targetUserId && expense.created_by !== userId) {
+      await insertNotifications({
+        userIds: [expense.created_by],
+        groupId: expense.group_id,
+        expenseId,
+        type: "payment_settled_by_member",
+        title: "Member settled expense",
+        body: `${targetName == "A member" ? actorName : targetName} has settled their expense for ${expense.description}.`,
+        data: {
+          groupId: expense.group_id,
+          expenseId,
+          memberId: targetUserId,
+          route: "expense_detail"
+        },
+        soundName: "expense_tracker"
+      });
+    }
   }
 
   return res.json({ payment: updated.rows[0] });

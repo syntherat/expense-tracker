@@ -42,13 +42,31 @@ class _ExpenseAppState extends State<ExpenseApp> {
   AppUser? _user;
   bool _booting = true;
   String? _pendingInviteToken;
+  Map<String, dynamic>? _pendingNotificationData;
   bool _invitePromptOpen = false;
 
   @override
   void initState() {
     super.initState();
+    _initNotificationHandlers();
     _initDeepLinks();
     _restoreSession();
+  }
+
+  void _initNotificationHandlers() {
+    if (kIsWeb) {
+      return;
+    }
+
+    OneSignal.Notifications.addClickListener((event) {
+      final rawData = event.notification.additionalData;
+      if (rawData != null) {
+        _pendingNotificationData = rawData.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+        _tryHandlePendingNotificationNavigation();
+      }
+    });
   }
 
   @override
@@ -123,6 +141,60 @@ class _ExpenseAppState extends State<ExpenseApp> {
     });
 
     _tryShowInvitePrompt();
+    _tryHandlePendingNotificationNavigation();
+  }
+
+  Future<void> _tryHandlePendingNotificationNavigation() async {
+    if (!mounted || _booting || _user == null || _pendingNotificationData == null) {
+      return;
+    }
+
+    final payload = _pendingNotificationData!;
+    final groupIdRaw = payload['groupId'];
+    final expenseIdRaw = payload['expenseId'];
+    final groupId = groupIdRaw is String ? groupIdRaw : '';
+    final expenseId = expenseIdRaw is String ? expenseIdRaw : '';
+
+    if (groupId.isEmpty) {
+      _pendingNotificationData = null;
+      return;
+    }
+
+    try {
+      final groups = await _apiService.listGroups();
+
+      Group? targetGroup;
+      for (final group in groups) {
+        if (group.id == groupId) {
+          targetGroup = group;
+          break;
+        }
+      }
+
+      if (targetGroup == null) {
+        _pendingNotificationData = null;
+        return;
+      }
+
+      _pendingNotificationData = null;
+      if (!mounted) {
+        return;
+      }
+
+      _navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (context) => GroupDetailScreen(
+            apiService: _apiService,
+            group: targetGroup!,
+            user: _user!,
+            initialExpenseId: expenseId.isEmpty ? null : expenseId,
+          ),
+        ),
+      );
+    } catch (_) {
+      // Keep app usable even if navigation prefetch fails.
+      _pendingNotificationData = null;
+    }
   }
 
   Future<void> _tryShowInvitePrompt() async {
@@ -376,6 +448,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
                 if (!kIsWeb) OneSignal.login(user.id);
                 setState(() => _user = user);
                 _tryShowInvitePrompt();
+                _tryHandlePendingNotificationNavigation();
               },
             );
           }

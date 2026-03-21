@@ -29,8 +29,13 @@ export async function sendPushNotifications({
 
     // Add custom notification sound if specified
     if (soundName) {
-      payload.ios_sound = `${soundName}.caf`;
+      payload.ios_sound = `${soundName}.wav`;
       payload.android_sound = soundName;
+    }
+
+    // Android 8+ notification sounds are controlled by channel configuration.
+    if (env.ONESIGNAL_ANDROID_CHANNEL_ID) {
+      payload.android_channel_id = env.ONESIGNAL_ANDROID_CHANNEL_ID;
     }
 
     const res = await fetch("https://api.onesignal.com/notifications", {

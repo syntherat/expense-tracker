@@ -22,7 +22,17 @@ class ApiService {
             },
           ),
         ) {
-    configureSessionTransport(_dio);
+    _sessionTransportReady = configureSessionTransport(_dio);
+
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          await _sessionTransportReady;
+          handler.next(options);
+        },
+      ),
+    );
+
     // Start session refresh heartbeat every 24 hours to keep session alive
     _startSessionRefreshHeartbeat();
   }
@@ -36,6 +46,7 @@ class ApiService {
     defaultValue: 'https://expense-tracker-7aie.onrender.com/invite',
   );
   final Dio _dio;
+  late final Future<void> _sessionTransportReady;
   Timer? _sessionRefreshTimer;
 
   /// Start periodic session refresh to keep the session alive (every 24 hours)

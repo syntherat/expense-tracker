@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
 
-void configureSessionTransport(Dio dio) {
+Future<void> configureSessionTransport(Dio dio) async {
   // No-op on non-IO platforms.
 }
