@@ -26,6 +26,7 @@ Future<void> configureSessionTransport(Dio dio) async {
     dio.interceptors.removeWhere((i) => i is CookieManager);
     dio.interceptors.add(CookieManager(cookieJar));
   } catch (e) {
-    debugPrint('Cookie persistence setup failed: $e, keeping in-memory storage');
+    debugPrint(
+        'Cookie persistence setup failed: $e, keeping in-memory storage');
   }
 }

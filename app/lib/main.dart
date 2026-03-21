@@ -145,7 +145,10 @@ class _ExpenseAppState extends State<ExpenseApp> {
   }
 
   Future<void> _tryHandlePendingNotificationNavigation() async {
-    if (!mounted || _booting || _user == null || _pendingNotificationData == null) {
+    if (!mounted ||
+        _booting ||
+        _user == null ||
+        _pendingNotificationData == null) {
       return;
     }
 

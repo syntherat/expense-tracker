@@ -1,7 +1,7 @@
 name: expense_tracker_app
 description: Expense tracker and spliter for groups
 publish_to: "none"
-version: 1.3.0+3
+version: 1.3.1+4
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
