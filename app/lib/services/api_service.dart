@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -22,6 +23,8 @@ class ApiService {
           ),
         ) {
     configureSessionTransport(_dio);
+    // Start session refresh heartbeat every 24 hours to keep session alive
+    _startSessionRefreshHeartbeat();
   }
 
   static const String _apiBaseUrl = String.fromEnvironment(
@@ -30,9 +33,32 @@ class ApiService {
   );
   static const String _inviteShareBaseUrl = String.fromEnvironment(
     'INVITE_SHARE_BASE_URL',
-    defaultValue: 'https://app.expensetracker.local/invite',
+    defaultValue: 'https://expense-tracker-7aie.onrender.com/invite',
   );
   final Dio _dio;
+  Timer? _sessionRefreshTimer;
+
+  /// Start periodic session refresh to keep the session alive (every 24 hours)
+  void _startSessionRefreshHeartbeat() {
+    // Call me() once immediately to verify session, then refresh every 24 hours
+    _sessionRefreshTimer = Timer.periodic(const Duration(hours: 24), (_) {
+      _refreshSessionSilently();
+    });
+  }
+
+  /// Silently refresh the session by calling me() without throwing errors
+  Future<void> _refreshSessionSilently() async {
+    try {
+      await me();
+    } catch (_) {
+      // Silent fail - session may have expired which is ok
+      // User will be prompted to login when they next make a request
+    }
+  }
+
+  void dispose() {
+    _sessionRefreshTimer?.cancel();
+  }
 
   static String readErrorMessage(
     Object error, {

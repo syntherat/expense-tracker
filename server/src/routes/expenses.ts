@@ -15,10 +15,15 @@ const lineItemSchema = z.object({
   amountCents: z.number().int().nonnegative()
 });
 
+// Maximum expense amount: 10,000,000 cents (100,000 in major currency units)
+const MAX_EXPENSE_AMOUNT_CENTS = 10_000_000;
+
 const createExpenseSchema = z.object({
   description: z.string().min(1).max(200),
   notes: z.string().max(1000).optional(),
-  amountCents: z.number().int().positive(),
+  amountCents: z.number().int().positive().max(MAX_EXPENSE_AMOUNT_CENTS, {
+    message: `Expense amount cannot exceed ${(MAX_EXPENSE_AMOUNT_CENTS / 100).toLocaleString()} in total`
+  }),
   currency: z.string().length(3).default("INR"),
   expenseDate: z.string().optional(),
   payers: z.array(lineItemSchema).min(1),
@@ -130,7 +135,8 @@ async function insertNotifications({
   type,
   title,
   body,
-  data
+  data,
+  soundName
 }: {
   userIds: string[];
   groupId: string;
@@ -139,27 +145,30 @@ async function insertNotifications({
   title: string;
   body: string;
   data?: Record<string, unknown>;
+  soundName?: string;
 }) {
-  for (const targetUserId of userIds) {
-    await pool.query(
-      `
-        INSERT INTO notifications (user_id, group_id, expense_id, type, title, body, data)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb);
-      `,
-      [
-        targetUserId,
-        groupId,
-        expenseId,
-        type,
-        title,
-        body,
-        JSON.stringify(data ?? {})
-      ]
-    );
+  if (!userIds.length) {
+    return;
   }
 
+  await pool.query(
+    `
+      INSERT INTO notifications (user_id, group_id, expense_id, type, title, body, data)
+      SELECT
+        target_user_id,
+        $2::uuid,
+        $3::uuid,
+        $4::text,
+        $5::text,
+        $6::text,
+        $7::jsonb
+      FROM unnest($1::uuid[]) AS target_user_id;
+    `,
+    [userIds, groupId, expenseId, type, title, body, JSON.stringify(data ?? {})]
+  );
+
   // Fire push notifications (non-blocking, never crashes request on failure).
-  void sendPushNotifications({ userIds, title, body, data });
+  void sendPushNotifications({ userIds, title, body, data, soundName });
 }
 
 expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Response) => {
@@ -281,7 +290,8 @@ expensesRouter.post("/groups/:groupId/expenses", async (req: Request, res: Respo
             description: payload.description,
             amountCents: payload.amountCents,
             createdBy: userId
-          }
+          },
+          soundName: "expense_tracker"
         });
       } catch (notificationError) {
         console.error("Failed to dispatch expense-created notifications", notificationError);
@@ -528,7 +538,8 @@ expensesRouter.post("/expenses/:expenseId/reminders", async (req: Request, res: 
     type: "payment_reminder",
     title: "Payment reminder",
     body: `Reminder: payment is pending for ${expense.description}.`,
-    data: { expenseId }
+    data: { expenseId },
+    soundName: "expense_tracker"
   });
 
   await pool.query(

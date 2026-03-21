@@ -661,8 +661,7 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
   bool _loading = true;
   bool _busy = false;
 
-  bool get _isCreator =>
-      _detail?.expense.createdById == widget.user.id;
+  bool get _isCreator => _detail?.expense.createdById == widget.user.id;
 
   @override
   void initState() {

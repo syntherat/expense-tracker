@@ -4,32 +4,42 @@ export async function sendPushNotifications({
   userIds,
   title,
   body,
-  data
+  data,
+  soundName
 }: {
   userIds: string[];
   title: string;
   body: string;
   data?: Record<string, unknown>;
+  soundName?: string;
 }): Promise<void> {
   if (!env.ONESIGNAL_APP_ID || !env.ONESIGNAL_API_KEY || !userIds.length) {
     return;
   }
 
   try {
+    const payload: Record<string, unknown> = {
+      app_id: env.ONESIGNAL_APP_ID,
+      include_aliases: { external_id: userIds },
+      target_channel: "push",
+      headings: { en: title },
+      contents: { en: body },
+      data: data ?? {}
+    };
+
+    // Add custom notification sound if specified
+    if (soundName) {
+      payload.ios_sound = `${soundName}.caf`;
+      payload.android_sound = soundName;
+    }
+
     const res = await fetch("https://api.onesignal.com/notifications", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Key ${env.ONESIGNAL_API_KEY}`
       },
-      body: JSON.stringify({
-        app_id: env.ONESIGNAL_APP_ID,
-        include_aliases: { external_id: userIds },
-        target_channel: "push",
-        headings: { en: title },
-        contents: { en: body },
-        data: data ?? {}
-      })
+      body: JSON.stringify(payload)
     });
 
     if (!res.ok) {

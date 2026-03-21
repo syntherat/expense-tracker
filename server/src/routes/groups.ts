@@ -25,7 +25,8 @@ function makeInviteToken() {
 }
 
 function makeInviteLink(token: string) {
-  return `${env.APP_INVITE_BASE_URL}/${token}`;
+  const base = env.APP_INVITE_BASE_URL.replace(/\/+$/, "");
+  return `${base}/${token}`;
 }
 
 groupsRouter.post("/", async (req: Request, res: Response) => {

@@ -54,6 +54,7 @@ class _ExpenseAppState extends State<ExpenseApp> {
   @override
   void dispose() {
     _linkSub?.cancel();
+    _apiService.dispose();
     super.dispose();
   }
 
