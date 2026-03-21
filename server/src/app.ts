@@ -15,14 +15,34 @@ import { invitesRouter } from "./routes/invites.js";
 const PgSession = connectPgSimple(session);
 
 export const app = express();
+const isProduction = env.NODE_ENV === "production";
+
+const allowedOrigins = env.CLIENT_ORIGIN
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const resolvedSameSite: "lax" | "strict" | "none" =
+  isProduction && env.SESSION_COOKIE_SAME_SITE === "lax"
+    ? "none"
+    : env.SESSION_COOKIE_SAME_SITE;
 
 // Needed on platforms like Render/Heroku where TLS terminates at a proxy.
 app.set("trust proxy", 1);
 
 app.use(
   cors({
-    // Reflect the caller's Origin header so credentialed requests work from any origin.
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true
   })
 );
@@ -42,11 +62,11 @@ app.use(
     resave: false,
     saveUninitialized: false,
     rolling: false,
-    proxy: env.NODE_ENV === "production",
+    proxy: isProduction,
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000,
-      sameSite: env.SESSION_COOKIE_SAME_SITE,
-      secure: env.NODE_ENV === "production",
+      sameSite: resolvedSameSite,
+      secure: isProduction,
       httpOnly: true
     }
   })

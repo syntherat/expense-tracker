@@ -13,8 +13,8 @@ class ApiService {
       : _dio = Dio(
           BaseOptions(
             baseUrl: _apiBaseUrl,
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 20),
+            connectTimeout: const Duration(seconds: 30),
+            receiveTimeout: const Duration(seconds: 45),
             headers: {'Content-Type': 'application/json'},
             extra: {
               // Needed on web so browser includes session cookies.
@@ -29,6 +29,34 @@ class ApiService {
         onRequest: (options, handler) async {
           await _sessionTransportReady;
           handler.next(options);
+        },
+        onError: (error, handler) async {
+          final opts = error.requestOptions;
+          final method = opts.method.toUpperCase();
+          final alreadyRetried = opts.extra['__retried'] == true;
+          final retryable = error.type == DioExceptionType.connectionTimeout ||
+              error.type == DioExceptionType.sendTimeout ||
+              error.type == DioExceptionType.receiveTimeout ||
+              error.type == DioExceptionType.connectionError;
+
+          if (method == 'GET' && retryable && !alreadyRetried) {
+            try {
+              await Future<void>.delayed(const Duration(milliseconds: 700));
+              final replay = await _dio.fetch<dynamic>(
+                opts.copyWith(
+                  extra: {
+                    ...opts.extra,
+                    '__retried': true,
+                  },
+                ),
+              );
+              return handler.resolve(replay);
+            } catch (_) {
+              // Fall through to original error if retry also fails.
+            }
+          }
+
+          handler.next(error);
         },
       ),
     );
@@ -88,7 +116,7 @@ class ApiService {
         case DioExceptionType.receiveTimeout:
           return 'Request timed out. Please check your internet and try again.';
         case DioExceptionType.connectionError:
-          return 'Could not connect to server. Please check your connection.';
+          return 'Could not connect to server. Please check your connection. If the server just restarted, wait a few seconds and retry.';
         case DioExceptionType.cancel:
           return 'Request was cancelled.';
         default:
@@ -139,12 +167,29 @@ class ApiService {
   }
 
   Future<AppUser> login({required String name, required String phone}) async {
-    final res = await _dio.post('/auth/login', data: {
+    await _dio.post('/auth/login', data: {
       'name': name,
       'phone': phone,
     });
 
-    return AppUser.fromJson(res.data['user'] as Map<String, dynamic>);
+    // Verify cookie-backed session is actually established before moving ahead.
+    final verified = await me();
+    if (verified == null) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/auth/login'),
+        type: DioExceptionType.badResponse,
+        response: Response(
+          requestOptions: RequestOptions(path: '/auth/login'),
+          statusCode: 401,
+          data: {
+            'message':
+                'Login did not persist. Please retry. If this continues, check server cookie settings.',
+          },
+        ),
+      );
+    }
+
+    return verified;
   }
 
   Future<AppUser?> me() async {

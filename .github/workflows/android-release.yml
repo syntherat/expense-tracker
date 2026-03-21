@@ -114,6 +114,8 @@ jobs:
           flutter build apk \
             --release \
             --target-platform android-arm,android-arm64 \
+            --dart-define=API_BASE_URL=https://expense-tracker-7aie.onrender.com/api \
+            --dart-define=INVITE_SHARE_BASE_URL=https://expense-tracker-7aie.onrender.com/invite \
             --build-name "$VERSION_NAME" \
             --build-number "$VERSION_CODE"
 
@@ -124,6 +126,8 @@ jobs:
             --release \
             --split-per-abi \
             --target-platform android-arm,android-arm64 \
+            --dart-define=API_BASE_URL=https://expense-tracker-7aie.onrender.com/api \
+            --dart-define=INVITE_SHARE_BASE_URL=https://expense-tracker-7aie.onrender.com/invite \
             --build-name "$VERSION_NAME" \
             --build-number "$VERSION_CODE"
 

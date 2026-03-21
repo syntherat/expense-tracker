@@ -970,8 +970,8 @@ class _ExpenseDetailPageState extends State<_ExpenseDetailPage>
                               const SizedBox(height: 10),
                               ...(() {
                                 final flows = _computeExpenseFlows(
-                                  _detail!.payers,
-                                  _detail!.splits,
+                                  _detail!.pendingPayments,
+                                  _detail!.expense.createdByName,
                                 );
                                 if (flows.isEmpty) {
                                   return [
@@ -1561,73 +1561,25 @@ class _ExpenseTile extends StatelessWidget {
 }
 
 List<_ExpenseFlow> _computeExpenseFlows(
-  List<ExpenseLineItem> payers,
-  List<ExpenseLineItem> splits,
+  List<ExpensePendingPayment> pendingPayments,
+  String creatorName,
 ) {
-  final paidMap = <String, int>{};
-  final owedMap = <String, int>{};
-  final names = <String, String>{};
-
-  for (final p in payers) {
-    paidMap[p.userId] = (paidMap[p.userId] ?? 0) + p.amountCents;
-    names[p.userId] = p.fullName;
-  }
-
-  for (final s in splits) {
-    owedMap[s.userId] = (owedMap[s.userId] ?? 0) + s.amountCents;
-    names[s.userId] = s.fullName;
-  }
-
-  final allIds = <String>{...paidMap.keys, ...owedMap.keys};
-  final debtors = <_ExpenseNode>[];
-  final creditors = <_ExpenseNode>[];
-
-  for (final id in allIds) {
-    final net = (paidMap[id] ?? 0) - (owedMap[id] ?? 0);
-    if (net < 0) {
-      debtors.add(_ExpenseNode(id: id, amount: -net));
-    } else if (net > 0) {
-      creditors.add(_ExpenseNode(id: id, amount: net));
-    }
-  }
-
-  debtors.sort((a, b) => b.amount.compareTo(a.amount));
-  creditors.sort((a, b) => b.amount.compareTo(a.amount));
-
   final flows = <_ExpenseFlow>[];
-  var i = 0;
-  var j = 0;
-
-  while (i < debtors.length && j < creditors.length) {
-    final d = debtors[i];
-    final c = creditors[j];
-    final amount = d.amount < c.amount ? d.amount : c.amount;
-
-    if (amount > 0) {
-      flows.add(
-        _ExpenseFlow(
-          fromName: names[d.id] ?? 'Unknown',
-          toName: names[c.id] ?? 'Unknown',
-          amountCents: amount,
-        ),
-      );
+  for (final pending in pendingPayments) {
+    if (pending.isPaid || pending.amountCents <= 0) {
+      continue;
     }
 
-    d.amount -= amount;
-    c.amount -= amount;
-
-    if (d.amount == 0) i++;
-    if (c.amount == 0) j++;
+    flows.add(
+      _ExpenseFlow(
+        fromName: pending.fullName,
+        toName: creatorName,
+        amountCents: pending.amountCents,
+      ),
+    );
   }
 
   return flows;
-}
-
-class _ExpenseNode {
-  _ExpenseNode({required this.id, required this.amount});
-
-  final String id;
-  int amount;
 }
 
 class _ExpenseFlow {

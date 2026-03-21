@@ -13,3 +13,7 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,   // Timeout for acquiring a connection
   allowExitOnIdle: true             // Allow process to exit when pool is idle
 });
+
+pool.on("error", (err) => {
+  console.error("Unexpected PostgreSQL pool error:", err);
+});
