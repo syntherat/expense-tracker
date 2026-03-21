@@ -148,12 +148,34 @@ class ApiService {
   }
 
   Future<AppUser?> me() async {
-    try {
-      final res = await _dio.get('/auth/me');
-      return AppUser.fromJson(res.data['user'] as Map<String, dynamic>);
-    } catch (_) {
-      return null;
+    const maxAttempts = 3;
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final res = await _dio.get('/auth/me');
+        return AppUser.fromJson(res.data['user'] as Map<String, dynamic>);
+      } on DioException catch (e) {
+        final status = e.response?.statusCode;
+        if (status == 401 || status == 403) {
+          return null;
+        }
+
+        final retryable = e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.sendTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.connectionError;
+
+        if (!retryable || attempt == maxAttempts - 1) {
+          rethrow;
+        }
+
+        await Future<void>.delayed(
+          Duration(milliseconds: 400 * (attempt + 1)),
+        );
+      }
     }
+
+    return null;
   }
 
   Future<void> logout() async {

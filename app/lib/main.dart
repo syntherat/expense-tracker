@@ -130,7 +130,14 @@ class _ExpenseAppState extends State<ExpenseApp> {
   }
 
   Future<void> _restoreSession() async {
-    final me = await _apiService.me();
+    AppUser? me;
+
+    try {
+      me = await _apiService.me();
+    } catch (_) {
+      me = null;
+    }
+
     if (!mounted) return;
     if (me != null && !kIsWeb) {
       OneSignal.login(me.id);

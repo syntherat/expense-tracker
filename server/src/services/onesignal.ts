@@ -17,6 +17,10 @@ export async function sendPushNotifications({
     return;
   }
 
+  if (!env.ONESIGNAL_ANDROID_CHANNEL_ID && soundName) {
+    console.warn("[OneSignal] Custom sound requested but ONESIGNAL_ANDROID_CHANNEL_ID is not set. Android may play default sound.");
+  }
+
   try {
     const payload: Record<string, unknown> = {
       app_id: env.ONESIGNAL_APP_ID,

@@ -41,11 +41,11 @@ app.use(
     secret: env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    rolling: true,
+    rolling: false,
     proxy: env.NODE_ENV === "production",
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000,
-      sameSite: env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: env.SESSION_COOKIE_SAME_SITE,
       secure: env.NODE_ENV === "production",
       httpOnly: true
     }

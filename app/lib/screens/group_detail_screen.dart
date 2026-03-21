@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
@@ -27,17 +29,39 @@ class GroupDetailScreen extends StatefulWidget {
   State<GroupDetailScreen> createState() => _GroupDetailScreenState();
 }
 
-class _GroupDetailScreenState extends State<GroupDetailScreen> {
+class _GroupDetailScreenState extends State<GroupDetailScreen>
+    with WidgetsBindingObserver {
   List<GroupMember> _members = [];
   List<GroupBalance> _balances = [];
   List<ExpenseItem> _expenses = [];
   bool _loading = true;
   bool _openedInitialExpense = false;
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted && !_loading) {
+        _load();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && !_loading) {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -712,17 +736,39 @@ class _ExpenseDetailPage extends StatefulWidget {
   State<_ExpenseDetailPage> createState() => _ExpenseDetailPageState();
 }
 
-class _ExpenseDetailPageState extends State<_ExpenseDetailPage> {
+class _ExpenseDetailPageState extends State<_ExpenseDetailPage>
+    with WidgetsBindingObserver {
   ExpenseDetail? _detail;
   bool _loading = true;
   bool _busy = false;
+  Timer? _autoRefreshTimer;
 
   bool get _isCreator => _detail?.expense.createdById == widget.user.id;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted && !_loading && !_busy) {
+        _load();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && !_busy) {
+      _load();
+    }
   }
 
   Future<void> _load() async {

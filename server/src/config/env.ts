@@ -9,6 +9,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(8),
   SESSION_COOKIE_NAME: z.string().default("expense.sid"),
+  SESSION_COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
   CLIENT_ORIGIN: z.string().default("http://localhost:3000"),
   APP_INVITE_BASE_URL: z.string().default("https://expense-tracker-7aie.onrender.com/invite"),
   S3_ENABLED: z.coerce.boolean().default(false),
