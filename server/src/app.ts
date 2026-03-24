@@ -16,14 +16,17 @@ const PgSession = connectPgSimple(session);
 
 export const app = express();
 const isProduction = env.NODE_ENV === "production";
+const SESSION_TTL_DAYS = 10;
+const SESSION_TTL_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+const SESSION_TTL_SECONDS = SESSION_TTL_DAYS * 24 * 60 * 60;
 
 const resolvedSameSite: "lax" | "strict" | "none" =
   isProduction && env.SESSION_COOKIE_SAME_SITE === "lax"
     ? "none"
     : env.SESSION_COOKIE_SAME_SITE;
 
-// Needed on platforms like Render/Heroku where TLS terminates at a proxy.
-app.set("trust proxy", 1);
+// Needed on platforms like Render/Heroku where TLS terminates at a proxy chain.
+app.set("trust proxy", true);
 
 app.use(
   cors({
@@ -42,15 +45,16 @@ app.use(
     store: new PgSession({
       pool,
       tableName: "user_sessions",
+      ttl: SESSION_TTL_SECONDS,
       createTableIfMissing: false
     }),
     secret: env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    rolling: false,
+    rolling: true,
     proxy: isProduction,
     cookie: {
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: SESSION_TTL_MS,
       sameSite: resolvedSameSite,
       secure: isProduction,
       httpOnly: true

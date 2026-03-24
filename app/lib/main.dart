@@ -88,13 +88,24 @@ class _ExpenseAppState extends State<ExpenseApp> with WidgetsBindingObserver {
     }
   }
 
+  Future<AppUser?> _fetchMeWithUnauthorizedConfirmation() async {
+    final first = await _apiService.me();
+    if (first != null) {
+      return first;
+    }
+
+    // Confirm unauthorized once more before clearing local auth state.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    return _apiService.me();
+  }
+
   Future<void> _refreshSessionOnAppResume() async {
     if (_booting || !mounted) {
       return;
     }
 
     try {
-      final me = await _apiService.me();
+      final me = await _fetchMeWithUnauthorizedConfirmation();
       if (!mounted) return;
 
       if (me != null) {
@@ -182,7 +193,7 @@ class _ExpenseAppState extends State<ExpenseApp> with WidgetsBindingObserver {
     AppUser? me = cachedUser;
 
     try {
-      final remoteUser = await _apiService.me();
+      final remoteUser = await _fetchMeWithUnauthorizedConfirmation();
       if (remoteUser != null) {
         me = remoteUser;
         await _authSessionStore.saveUser(remoteUser);
