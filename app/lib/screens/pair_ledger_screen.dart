@@ -252,25 +252,27 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
     final sheetName = excel.getDefaultSheet() ?? 'Sheet1';
     final sheet = excel[sheetName];
 
-    sheet.appendRow(['Pair Ledger']);
-    sheet.appendRow(['Group', widget.group.name]);
-    sheet.appendRow(['User A', data.userA.fullName]);
-    sheet.appendRow(['User B', data.userB.fullName]);
-    sheet.appendRow([]);
+    _appendExcelRow(sheet, ['Pair Ledger']);
+    _appendExcelRow(sheet, ['Group', widget.group.name]);
+    _appendExcelRow(sheet, ['User A', data.userA.fullName]);
+    _appendExcelRow(sheet, ['User B', data.userB.fullName]);
+    _appendExcelRow(sheet, const []);
 
-    sheet.appendRow(['Totals']);
-    sheet.appendRow(['Metric', data.userA.fullName, data.userB.fullName]);
-    sheet.appendRow(
+    _appendExcelRow(sheet, ['Totals']);
+    _appendExcelRow(
+        sheet, ['Metric', data.userA.fullName, data.userB.fullName]);
+    _appendExcelRow(sheet,
         ['Paid', data.totals.userA.paidCents, data.totals.userB.paidCents]);
-    sheet.appendRow(
+    _appendExcelRow(sheet,
         ['Share', data.totals.userA.shareCents, data.totals.userB.shareCents]);
-    sheet.appendRow(
-        ['Net', data.totals.userA.netCents, data.totals.userB.netCents]);
-    sheet.appendRow(['Total Expense Cents', data.totals.totalExpenseCents]);
-    sheet.appendRow([]);
+    _appendExcelRow(
+        sheet, ['Net', data.totals.userA.netCents, data.totals.userB.netCents]);
+    _appendExcelRow(
+        sheet, ['Total Expense Cents', data.totals.totalExpenseCents]);
+    _appendExcelRow(sheet, const []);
 
-    sheet.appendRow(['Expenses']);
-    sheet.appendRow([
+    _appendExcelRow(sheet, ['Expenses']);
+    _appendExcelRow(sheet, [
       'Expense ID',
       'Description',
       'Expense Date',
@@ -285,7 +287,7 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
       'Is Paid'
     ]);
     for (final e in data.expenses) {
-      sheet.appendRow([
+      _appendExcelRow(sheet, [
         e.expenseId,
         e.description,
         e.expenseDate?.toIso8601String() ?? '',
@@ -300,10 +302,10 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
         e.transaction.isPaid,
       ]);
     }
-    sheet.appendRow([]);
+    _appendExcelRow(sheet, const []);
 
-    sheet.appendRow(['Transactions']);
-    sheet.appendRow([
+    _appendExcelRow(sheet, ['Transactions']);
+    _appendExcelRow(sheet, [
       'Expense ID',
       'Description',
       'Debtor',
@@ -313,7 +315,7 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
       'Paid At'
     ]);
     for (final t in data.transactions) {
-      sheet.appendRow([
+      _appendExcelRow(sheet, [
         t.expenseId,
         t.description,
         t.debtorName ?? '',
@@ -323,10 +325,10 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
         t.paidAt?.toIso8601String() ?? '',
       ]);
     }
-    sheet.appendRow([]);
+    _appendExcelRow(sheet, const []);
 
-    sheet.appendRow(['Final Settlement']);
-    sheet.appendRow([
+    _appendExcelRow(sheet, ['Final Settlement']);
+    _appendExcelRow(sheet, [
       'Status',
       data.settlement.status,
       'From',
@@ -339,6 +341,22 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
 
     final encoded = excel.encode();
     return Uint8List.fromList(encoded ?? <int>[]);
+  }
+
+  void _appendExcelRow(Sheet sheet, List<Object?> rowValues) {
+    sheet.appendRow(rowValues.map(_toCellValue).toList(growable: false));
+  }
+
+  CellValue? _toCellValue(Object? value) {
+    if (value == null) return null;
+    if (value is CellValue) return value;
+    if (value is String) return TextCellValue(value);
+    if (value is bool) return BoolCellValue(value);
+    if (value is int) return IntCellValue(value);
+    if (value is double) return DoubleCellValue(value);
+    if (value is num) return DoubleCellValue(value.toDouble());
+    if (value is DateTime) return DateTimeCellValue.fromDateTime(value);
+    return TextCellValue(value.toString());
   }
 
   @override
@@ -464,7 +482,7 @@ class _PairLedgerScreenState extends State<PairLedgerScreen> {
                     icon: Icons.receipt_rounded,
                     title: 'No direct expenses found',
                     subtitle:
-                        'No expenses exist where only these two participated.',
+                        'No expenses found where both users participated.',
                   )
                 else
                   ..._data!.expenses.map(

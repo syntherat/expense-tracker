@@ -481,12 +481,6 @@ expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Res
           WHERE pu.expense_id = e.id
             AND pu.user_id = $3
         )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM participant_union pu
-          WHERE pu.expense_id = e.id
-            AND pu.user_id NOT IN ($2, $3)
-        )
       ORDER BY e.expense_date DESC, e.created_at DESC;
     `,
     [groupId, userAId, userBId]
@@ -579,6 +573,7 @@ expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Res
     const userAShare = splitMap.get(`${expenseId}:${userAId}`) ?? 0;
     const userBShare = splitMap.get(`${expenseId}:${userBId}`) ?? 0;
     const userANet = userAPaid - userAShare;
+    const userBNet = userBPaid - userBShare;
 
     totalExpenseCents += Number(expense.amount_cents) || 0;
     userAPaidCents += userAPaid;
@@ -590,14 +585,14 @@ expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Res
     let creditorId: string | null = null;
     let amountCents = 0;
 
-    if (userANet > 0) {
+    if (userANet > 0 && userBNet < 0) {
       debtorId = userBId;
       creditorId = userAId;
-      amountCents = userANet;
-    } else if (userANet < 0) {
+      amountCents = Math.min(userANet, -userBNet);
+    } else if (userANet < 0 && userBNet > 0) {
       debtorId = userAId;
       creditorId = userBId;
-      amountCents = -userANet;
+      amountCents = Math.min(-userANet, userBNet);
     }
 
     const status = debtorId == null
@@ -625,7 +620,7 @@ expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Res
         fullName: nameById.get(userBId) ?? "User B",
         paidCents: userBPaid,
         shareCents: userBShare,
-        netCents: -userANet
+        netCents: userBNet
       },
       transaction: {
         debtorId,
@@ -657,22 +652,22 @@ expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Res
   const userANetCents = userAPaidCents - userAShareCents;
   const userBNetCents = userBPaidCents - userBShareCents;
 
-  const settlement = userANetCents > 0
+  const settlement = userANetCents > 0 && userBNetCents < 0
     ? {
       fromUserId: userBId,
       fromUserName: nameById.get(userBId) ?? "User B",
       toUserId: userAId,
       toUserName: nameById.get(userAId) ?? "User A",
-      amountCents: userANetCents,
+      amountCents: Math.min(userANetCents, -userBNetCents),
       status: "userB_owes_userA"
     }
-    : userANetCents < 0
+    : userANetCents < 0 && userBNetCents > 0
       ? {
         fromUserId: userAId,
         fromUserName: nameById.get(userAId) ?? "User A",
         toUserId: userBId,
         toUserName: nameById.get(userBId) ?? "User B",
-        amountCents: -userANetCents,
+        amountCents: Math.min(-userANetCents, userBNetCents),
         status: "userA_owes_userB"
       }
       : {
@@ -681,7 +676,7 @@ expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Res
         toUserId: null,
         toUserName: null,
         amountCents: 0,
-        status: "settled"
+        status: "settled_between_pair"
       };
 
   return res.json({
