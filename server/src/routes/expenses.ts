@@ -38,6 +38,11 @@ const markPaidSchema = z.object({
   isPaid: z.boolean().default(true)
 });
 
+const pairLedgerQuerySchema = z.object({
+  userAId: z.string().uuid(),
+  userBId: z.string().uuid()
+});
+
 type AttachmentPayload = {
   id: string;
   fileName: string;
@@ -399,6 +404,307 @@ expensesRouter.get("/groups/:groupId/summary", async (req: Request, res: Respons
         : Number(me?.net_cents ?? 0) < 0
           ? "you_owe_group"
           : "settled"
+  });
+});
+
+expensesRouter.get("/groups/:groupId/pair-ledger", async (req: Request, res: Response) => {
+  const { groupId } = req.params;
+  const requesterId = req.user!.id;
+  const isMember = await ensureGroupMembership(groupId, requesterId);
+
+  if (!isMember) {
+    return res.status(403).json({ message: "Not a group member" });
+  }
+
+  const parsed = pairLedgerQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ message: parsed.error.flatten() });
+  }
+
+  const { userAId, userBId } = parsed.data;
+  if (userAId === userBId) {
+    return res.status(400).json({ message: "userAId and userBId must be different users" });
+  }
+
+  const membersResult = await pool.query(
+    `
+      SELECT u.id, u.full_name
+      FROM group_members gm
+      JOIN users u ON u.id = gm.user_id
+      WHERE gm.group_id = $1
+        AND gm.user_id = ANY($2::uuid[]);
+    `,
+    [groupId, [userAId, userBId]]
+  );
+
+  if (membersResult.rowCount !== 2) {
+    return res.status(400).json({ message: "Both users must belong to this group" });
+  }
+
+  const nameById = new Map<string, string>();
+  for (const row of membersResult.rows) {
+    nameById.set(row.id as string, row.full_name as string);
+  }
+
+  const expensesResult = await pool.query(
+    `
+      WITH participant_union AS (
+        SELECT ep.expense_id, ep.user_id
+        FROM expense_payers ep
+        WHERE ep.amount_cents > 0
+        UNION
+        SELECT es.expense_id, es.user_id
+        FROM expense_splits es
+        WHERE es.amount_cents > 0
+      )
+      SELECT
+        e.id,
+        e.description,
+        e.amount_cents,
+        e.currency,
+        e.expense_date,
+        e.created_at,
+        e.created_by,
+        creator.full_name AS created_by_name
+      FROM expenses e
+      JOIN users creator ON creator.id = e.created_by
+      WHERE e.group_id = $1
+        AND EXISTS (
+          SELECT 1
+          FROM participant_union pu
+          WHERE pu.expense_id = e.id
+            AND pu.user_id = $2
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM participant_union pu
+          WHERE pu.expense_id = e.id
+            AND pu.user_id = $3
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM participant_union pu
+          WHERE pu.expense_id = e.id
+            AND pu.user_id NOT IN ($2, $3)
+        )
+      ORDER BY e.expense_date DESC, e.created_at DESC;
+    `,
+    [groupId, userAId, userBId]
+  );
+
+  const expenseIds = expensesResult.rows.map((row) => row.id as string);
+
+  if (!expenseIds.length) {
+    return res.json({
+      users: {
+        userA: { id: userAId, fullName: nameById.get(userAId) ?? "User A" },
+        userB: { id: userBId, fullName: nameById.get(userBId) ?? "User B" }
+      },
+      expenses: [],
+      transactions: [],
+      totals: {
+        totalExpenseCents: 0,
+        userA: { paidCents: 0, shareCents: 0, netCents: 0 },
+        userB: { paidCents: 0, shareCents: 0, netCents: 0 }
+      },
+      settlement: {
+        fromUserId: null,
+        fromUserName: null,
+        toUserId: null,
+        toUserName: null,
+        amountCents: 0,
+        status: "settled"
+      }
+    });
+  }
+
+  const [payersResult, splitsResult, paymentStatusResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT expense_id, user_id, amount_cents
+        FROM expense_payers
+        WHERE expense_id = ANY($1::uuid[])
+          AND user_id = ANY($2::uuid[]);
+      `,
+      [expenseIds, [userAId, userBId]]
+    ),
+    pool.query(
+      `
+        SELECT expense_id, user_id, amount_cents
+        FROM expense_splits
+        WHERE expense_id = ANY($1::uuid[])
+          AND user_id = ANY($2::uuid[]);
+      `,
+      [expenseIds, [userAId, userBId]]
+    ),
+    pool.query(
+      `
+        SELECT expense_id, user_id, is_paid, paid_at
+        FROM expense_payment_status
+        WHERE expense_id = ANY($1::uuid[])
+          AND user_id = ANY($2::uuid[]);
+      `,
+      [expenseIds, [userAId, userBId]]
+    )
+  ]);
+
+  const payerMap = new Map<string, number>();
+  for (const row of payersResult.rows) {
+    payerMap.set(`${row.expense_id}:${row.user_id}`, Number(row.amount_cents) || 0);
+  }
+
+  const splitMap = new Map<string, number>();
+  for (const row of splitsResult.rows) {
+    splitMap.set(`${row.expense_id}:${row.user_id}`, Number(row.amount_cents) || 0);
+  }
+
+  const statusMap = new Map<string, { isPaid: boolean; paidAt: Date | null }>();
+  for (const row of paymentStatusResult.rows) {
+    statusMap.set(`${row.expense_id}:${row.user_id}`, {
+      isPaid: Boolean(row.is_paid),
+      paidAt: row.paid_at == null ? null : new Date(row.paid_at as string)
+    });
+  }
+
+  let totalExpenseCents = 0;
+  let userAPaidCents = 0;
+  let userAShareCents = 0;
+  let userBPaidCents = 0;
+  let userBShareCents = 0;
+
+  const structuredExpenses = expensesResult.rows.map((expense) => {
+    const expenseId = expense.id as string;
+    const userAPaid = payerMap.get(`${expenseId}:${userAId}`) ?? 0;
+    const userBPaid = payerMap.get(`${expenseId}:${userBId}`) ?? 0;
+    const userAShare = splitMap.get(`${expenseId}:${userAId}`) ?? 0;
+    const userBShare = splitMap.get(`${expenseId}:${userBId}`) ?? 0;
+    const userANet = userAPaid - userAShare;
+
+    totalExpenseCents += Number(expense.amount_cents) || 0;
+    userAPaidCents += userAPaid;
+    userAShareCents += userAShare;
+    userBPaidCents += userBPaid;
+    userBShareCents += userBShare;
+
+    let debtorId: string | null = null;
+    let creditorId: string | null = null;
+    let amountCents = 0;
+
+    if (userANet > 0) {
+      debtorId = userBId;
+      creditorId = userAId;
+      amountCents = userANet;
+    } else if (userANet < 0) {
+      debtorId = userAId;
+      creditorId = userBId;
+      amountCents = -userANet;
+    }
+
+    const status = debtorId == null
+      ? { isPaid: true, paidAt: null as Date | null }
+      : statusMap.get(`${expenseId}:${debtorId}`) ?? { isPaid: false, paidAt: null as Date | null };
+
+    return {
+      expenseId,
+      description: expense.description,
+      amountCents: Number(expense.amount_cents) || 0,
+      currency: expense.currency,
+      expenseDate: expense.expense_date,
+      createdAt: expense.created_at,
+      createdById: expense.created_by,
+      createdByName: expense.created_by_name,
+      userA: {
+        id: userAId,
+        fullName: nameById.get(userAId) ?? "User A",
+        paidCents: userAPaid,
+        shareCents: userAShare,
+        netCents: userANet
+      },
+      userB: {
+        id: userBId,
+        fullName: nameById.get(userBId) ?? "User B",
+        paidCents: userBPaid,
+        shareCents: userBShare,
+        netCents: -userANet
+      },
+      transaction: {
+        debtorId,
+        debtorName: debtorId == null ? null : nameById.get(debtorId) ?? null,
+        creditorId,
+        creditorName: creditorId == null ? null : nameById.get(creditorId) ?? null,
+        amountCents,
+        isPaid: status.isPaid,
+        paidAt: status.paidAt
+      }
+    };
+  });
+
+  const transactions = structuredExpenses
+    .filter((item) => item.transaction.amountCents > 0)
+    .map((item) => ({
+      expenseId: item.expenseId,
+      description: item.description,
+      expenseDate: item.expenseDate,
+      debtorId: item.transaction.debtorId,
+      debtorName: item.transaction.debtorName,
+      creditorId: item.transaction.creditorId,
+      creditorName: item.transaction.creditorName,
+      amountCents: item.transaction.amountCents,
+      isPaid: item.transaction.isPaid,
+      paidAt: item.transaction.paidAt
+    }));
+
+  const userANetCents = userAPaidCents - userAShareCents;
+  const userBNetCents = userBPaidCents - userBShareCents;
+
+  const settlement = userANetCents > 0
+    ? {
+      fromUserId: userBId,
+      fromUserName: nameById.get(userBId) ?? "User B",
+      toUserId: userAId,
+      toUserName: nameById.get(userAId) ?? "User A",
+      amountCents: userANetCents,
+      status: "userB_owes_userA"
+    }
+    : userANetCents < 0
+      ? {
+        fromUserId: userAId,
+        fromUserName: nameById.get(userAId) ?? "User A",
+        toUserId: userBId,
+        toUserName: nameById.get(userBId) ?? "User B",
+        amountCents: -userANetCents,
+        status: "userA_owes_userB"
+      }
+      : {
+        fromUserId: null,
+        fromUserName: null,
+        toUserId: null,
+        toUserName: null,
+        amountCents: 0,
+        status: "settled"
+      };
+
+  return res.json({
+    users: {
+      userA: { id: userAId, fullName: nameById.get(userAId) ?? "User A" },
+      userB: { id: userBId, fullName: nameById.get(userBId) ?? "User B" }
+    },
+    expenses: structuredExpenses,
+    transactions,
+    totals: {
+      totalExpenseCents,
+      userA: {
+        paidCents: userAPaidCents,
+        shareCents: userAShareCents,
+        netCents: userANetCents
+      },
+      userB: {
+        paidCents: userBPaidCents,
+        shareCents: userBShareCents,
+        netCents: userBNetCents
+      }
+    },
+    settlement
   });
 });
 

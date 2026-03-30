@@ -10,6 +10,10 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/app_chrome.dart';
 import 'add_expense_screen.dart';
+import 'pair_ledger_screen.dart';
+
+const _pairLedgerNameA = 'Sounak Pal';
+const _pairLedgerNameB = 'Akshat Balariya';
 
 class GroupDetailScreen extends StatefulWidget {
   const GroupDetailScreen({
@@ -215,6 +219,43 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           group: widget.group,
           user: widget.user,
           initialExpenses: _expenses,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      await _load();
+    }
+  }
+
+  Future<void> _openSounakAkshatLedgerPage() async {
+    final nameToMember = <String, GroupMember>{
+      for (final member in _members)
+        member.fullName.trim().toLowerCase(): member,
+    };
+
+    final userA = nameToMember[_pairLedgerNameA.toLowerCase()];
+    final userB = nameToMember[_pairLedgerNameB.toLowerCase()];
+
+    if (userA == null || userB == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open pair ledger because one of the users is not in this group.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PairLedgerScreen(
+          apiService: widget.apiService,
+          group: widget.group,
+          userA: userA,
+          userB: userB,
         ),
       ),
     );
@@ -509,6 +550,49 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           const SizedBox(width: 10),
                           FilledButton.tonalIcon(
                             onPressed: _openTransactionsPage,
+                            icon: const Icon(Icons.open_in_new_rounded),
+                            label: const Text('Open'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    AppPanel(
+                      borderRadius: 24,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(0x3326D3B4),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(Icons.people_alt_rounded,
+                                color: Color(0xFF1083A8)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '$_pairLedgerNameA ↔ $_pairLedgerNameB',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Open a dedicated page with only their shared expenses, transactions, totals, and final settlement.',
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.tonalIcon(
+                            onPressed: _openSounakAkshatLedgerPage,
                             icon: const Icon(Icons.open_in_new_rounded),
                             label: const Text('Open'),
                           ),

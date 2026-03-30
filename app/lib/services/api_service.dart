@@ -283,6 +283,22 @@ class ApiService {
         .toList();
   }
 
+  Future<PairLedgerData> getPairLedger({
+    required String groupId,
+    required String userAId,
+    required String userBId,
+  }) async {
+    final res = await _dio.get(
+      '/groups/$groupId/pair-ledger',
+      queryParameters: {
+        'userAId': userAId,
+        'userBId': userBId,
+      },
+    );
+
+    return PairLedgerData.fromJson(res.data as Map<String, dynamic>);
+  }
+
   Future<ExpenseDetail> getExpenseDetails(String expenseId) async {
     final res = await _dio.get('/expenses/$expenseId');
     final expense =
